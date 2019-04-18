@@ -65,11 +65,8 @@ typedef struct {
 TasksTCtr tasks;		// Contagem de tempo para execução de tarefas
 
 uint32_t  blinker;    // Contagem de alterações de estado do LED
-uint32_t  blinker2;    // Contagem de alterações de estado do LED
-uint8_t  bit1;    // Contagem de alterações de estado do LED
-uint8_t  bit2;    // Contagem de alterações de estado do LED
-uint16_t enca;
-uint16_t encb;
+uint16_t  enca;
+uint16_t  encb;
 
 /* ******************************************************************* */
 /* *** Protótipos das funções **************************************** */
@@ -101,7 +98,6 @@ void setup() {
     SPI.begin();                        // Inicializa a interface SPI
 
     blinker = 0;            // Inicialização da variável
-    blinker2 = 0;            // Inicialização da variável
 
     pinMode(RADIO_A0, INPUT_PULLUP);    // Endereço deste nó: bit 0
     pinMode(RADIO_A1, INPUT_PULLUP);    // Endereço deste nó: bit 1
@@ -162,34 +158,34 @@ void tasks_800ms( void ) {
     if( (millis() - tasks.last_800ms) > 800 ){
         tasks.last_100ms = millis();
 
-        blinker2++;
+        blinker++;
 
         // ciclo 0.8s
-        if ( (blinker2 % 2 ) == 0)
+        if ( (blinker % 2 ) == 0)
           digitalWrite(LED,HIGH);
         else 
           digitalWrite(LED,LOW);
 /*
         // ciclo 1.6s
-       if ( (blinker2 % 4 ) == 0)
+       if ( (blinker % 4 ) == 0)
           digitalWrite(LED,HIGH);
         else 
           digitalWrite(LED,LOW);
 
         // ciclo 3.2s
-       if ( (blinker2 % 8 ) == 0)
+       if ( (blinker % 8 ) == 0)
           digitalWrite(LED,HIGH);
         else 
           digitalWrite(LED,LOW);
           
         // ciclo 4s
-       if ( (blinker2 % 10 ) == 0)
+       if ( (blinker % 10 ) == 0)
           digitalWrite(LED,HIGH);
         else 
           digitalWrite(LED,LOW);
 
         // ciclo 8s
-       if ( (blinker2 % 20 ) == 0)
+       if ( (blinker % 20 ) == 0)
           digitalWrite(LED,HIGH);
         else 
           digitalWrite(LED,LOW);
@@ -221,27 +217,35 @@ void tasks_1000ms( void ) {
 }
 
  uint8_t get_node_addr( void ) {
-/*
-    bit1 = digitalRead(RADIO_A0);
-    bit2 = digitalRead(RADIO_A1);    
+
+    uint8_t addr = 0;
+    uint8_t addr2 = 0;
+    addr = digitalRead(RADIO_A0);
+    addr2 = digitalRead(RADIO_A1);    
   
-    bit1 = ((bit2<<1) + bit1);
-    Serial.println(bit1);
+    addr = ((addr<<1) + addr2);
+    Serial.println(addr);
 
     //return();????
-*/
+
 }
 
 uint16_t get_volt_bat( void ) {
   
-   bit1 = digitalRead(VOLT_BAT);
+   uint8_t valor = analogRead(VOLT_BAT);
+   // tranforma(valor)
+   Serial.Print(valor);
 
+   //return???
   
 }
 
 void status_encoders( uint16_t *count_enc_a, uint16_t *count_enc_b) {
 
-    
+    if ( (digitalRead(IRQ_ENC_A) == LOW) )
+      cout_enc_a += 1;
+    if ( (digitalRead(IRQ_ENC_B) == LOW) )
+      cout_enc_b += 1;
 
       
 }
