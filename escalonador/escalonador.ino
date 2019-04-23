@@ -101,7 +101,10 @@ void setup() {
 
     pinMode(RADIO_A0, INPUT_PULLUP);    // Endereço deste nó: bit 0
     pinMode(RADIO_A1, INPUT_PULLUP);    // Endereço deste nó: bit 1
-       
+
+    pinMode(IRQ_ENQ_A, INPUT_PULLUP);
+    pinMode(IRQ_ENQ_B, INPUT_PULLUP);
+
 }
 
 
@@ -224,30 +227,38 @@ void tasks_1000ms( void ) {
     addr2 = digitalRead(RADIO_A1);    
   
     addr = ((addr<<1) + addr2);
-    Serial.println(addr);
+    //Serial.println(addr);
 
-    //return();????
+    return(addr);
 
 }
 
 uint16_t get_volt_bat( void ) {
   
-   uint8_t valor = analogRead(VOLT_BAT);
-   // tranforma(valor)
-   Serial.Print(valor);
+   uint16_t valor = analogRead(VOLT_BAT);
+   valor = valor * 10;
+   //Serial.Print(valor);
 
-   //return???
+   return valor;
   
 }
 
 void status_encoders( uint16_t *count_enc_a, uint16_t *count_enc_b) {
 
-    if ( (digitalRead(IRQ_ENC_A) == LOW) )
-      cout_enc_a += 1;
-    if ( (digitalRead(IRQ_ENC_B) == LOW) )
-      cout_enc_b += 1;
+    attachInterrupt(digitalPinToInterrupt(count_enc_a),counta,RISING);
 
-      
+    attachInterrupt(digitalPinToInterrupt(count_enc_b),countb,RISING);
+
+}
+
+void counta () {
+     enca++;     
+     Serial.Printf(enca);
+}
+
+void countb () {
+    encb++;
+    Serial.Printf(encb);
 }
 
 /* ****************************************************************** */
