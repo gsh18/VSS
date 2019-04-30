@@ -50,12 +50,23 @@
 /* ******************************************************************* */
 /* Definições de estruturas de dados ( funcionais, status e controle ) */
 
+typedef union {
+  struct {
+    uint8_t  pwm_motor_B;        // (bits 0-7)   8 bits: Valor do PWM do Motor B
+    uint8_t  pwm_motor_A;        // (bits 8-15)  8 bits: Valor do PWM do Motor A
+    uint8_t  dir_motor_B : 2,    // (bits 16-17) 2 bits: BIN1 e BIN2  da ponte H
+             dir_motor_A : 2,    // (bits 18-19) 2 bits: AIN1 e AIN2  da ponte H
+             ign1_4b     : 4;    // (bits 20-23) 4 bits não utilizados (padding)
+    uint8_t  ign2_8b;            // (bits 24-31) 8 bits não utilizados (padding)
+  } config;
+  uint32_t status = 0;             // Leitura/Escrita simuntânea do conjunto de variáveis.
+} TMotCtrl;
 
 typedef struct {
-    uint32_t last_10ms   = 0;   // Controle das tarefas executadas a cada 10ms
-    uint32_t last_100ms  = 0;   // Controle das tarefas executadas a cada 100ms
-    uint32_t last_800ms = 0;
-    uint32_t last_1000ms = 0;   // Controle das tarefas executadas a cada 1000ms
+  uint32_t last_v = 0; // Tempo variavel
+  uint32_t last_10ms   = 0;   // Controle das tarefas executadas a cada 10ms
+  uint32_t last_100ms  = 0;   // Controle das tarefas executadas a cada 100ms
+  uint32_t last_1000ms = 0;   // Controle das tarefas executadas a cada 1000ms
 } TasksTCtr;
 
 /* ******************************************************************* */
@@ -68,6 +79,8 @@ uint32_t  blinker;    // Contagem de alterações de estado do LED
 uint16_t  enca;
 uint16_t  encb;
 
+TMotCtrl motor;
+
 /* ******************************************************************* */
 /* *** Protótipos das funções **************************************** */
 //
@@ -78,32 +91,35 @@ void     tasks_10ms( void );
 void     tasks_100ms( void );
 void     tasks_800ms( void );
 void     tasks_1000ms( void );
+//pt1
+void     led(/*uint16_t ms*/);
 uint8_t get_node_addr( void );
 uint16_t get_volt_bat( void );
 void status_encoders( uint16_t *count_enc_a, uint16_t *count_enc_b);
-
+//pt2
+void set_motor_status( uint32_t );
 /* ******************************************************************* */
 /* *** SETUP ********************************************************* */
 
 void setup() {
 
-    Serial.begin(115200);               // Inicialização da com. serial
+  Serial.begin(115200);               // Inicialização da com. serial
 
-    // Inicialização do pino do LED
-    pinMode(LED, OUTPUT);               // Pino do LED como saída digital
-    digitalWrite(LED, LOW);
-    
-    analogReference(INTERNAL);          // Referência dos ADCs -> 1.1V
+  // Inicialização do pino do LED
+  pinMode(LED, OUTPUT);               // Pino do LED como saída digital
+  digitalWrite(LED, LOW);
 
-    SPI.begin();                        // Inicializa a interface SPI
+  analogReference(INTERNAL);          // Referência dos ADCs -> 1.1V
 
-    blinker = 0;            // Inicialização da variável
+  SPI.begin();                        // Inicializa a interface SPI
 
-    pinMode(RADIO_A0, INPUT_PULLUP);    // Endereço deste nó: bit 0
-    pinMode(RADIO_A1, INPUT_PULLUP);    // Endereço deste nó: bit 1
+  blinker = 0;            // Inicialização da variável
 
-    pinMode(IRQ_ENQ_A, INPUT_PULLUP);
-    pinMode(IRQ_ENQ_B, INPUT_PULLUP);
+  pinMode(RADIO_A0, INPUT_PULLUP);    // Endereço deste nó: bit 0
+  pinMode(RADIO_A1, INPUT_PULLUP);    // Endereço deste nó: bit 1
+
+  //pinMode(IRQ_ENQ_A, INPUT_PULLUP);
+  //pinMode(IRQ_ENQ_B, INPUT_PULLUP);
 
 }
 
@@ -112,14 +128,18 @@ void setup() {
 /* *** LOOP PRINCIPAL ************************************************ */
 
 void loop() {
-    
-    tasks_10ms();                // Tarefas executadas a cada 10ms
-    tasks_100ms();               // Tarefas executadas a cada 100ms
-    tasks_800ms();              // Tarefas executadas a cada 800ms
-    tasks_1000ms();              // Tarefas executadas a cada 1000ms
-    get_node_addr();
-    get_volt_bat();
-    status_encoders(enca, encb);
+
+  tasks_10ms();                // Tarefas executadas a cada 10ms
+  tasks_100ms();               // Tarefas executadas a cada 100ms
+  tasks_1000ms();              // Tarefas executadas a cada 1000ms
+  // pt1
+  led();
+  get_node_addr();
+  get_volt_bat();
+  status_encoders(enca, encb);
+  //pt2
+  void set_motor_status( uint32_t );
+
 
 }
 
@@ -128,138 +148,147 @@ void loop() {
 /* *** FUNÇÕES (implementações) ************************************** */
 
 /* *********************************************************************
- * Tarefas que devem ser executadas em intervalos de 10ms
- */
+   Tarefas que devem ser executadas em intervalos de 10ms
+*/
 void tasks_10ms( void ) {
 
-     if( (millis() - tasks.last_10ms) > 10 ){
-        tasks.last_10ms = millis();
+  if ( (millis() - tasks.last_10ms) > 10 ) {
+    tasks.last_10ms = millis();
 
 
 
-    }
+  }
 }
 
 /* *********************************************************************
- * Tarefas que devem ser executadas em intervalos de 100ms
- */
+   Tarefas que devem ser executadas em intervalos de 100ms
+*/
 void tasks_100ms( void ) {
 
-    if( (millis() - tasks.last_100ms) > 100 ){
-        tasks.last_100ms = millis();
+  if ( (millis() - tasks.last_100ms) > 100 ) {
+    tasks.last_100ms = millis();
 
 
 
-    }
+  }
 }
 
 /* *********************************************************************
- * Tarefas que devem ser executadas em intervalos de 800ms
- */
-void tasks_800ms( void ) {
-
-    if( (millis() - tasks.last_800ms) > 800 ){
-        tasks.last_100ms = millis();
-
-        blinker++;
-
-        // ciclo 0.8s
-        if ( (blinker % 2 ) == 0)
-          digitalWrite(LED,HIGH);
-        else 
-          digitalWrite(LED,LOW);
-/*
-        // ciclo 1.6s
-       if ( (blinker % 4 ) == 0)
-          digitalWrite(LED,HIGH);
-        else 
-          digitalWrite(LED,LOW);
-
-        // ciclo 3.2s
-       if ( (blinker % 8 ) == 0)
-          digitalWrite(LED,HIGH);
-        else 
-          digitalWrite(LED,LOW);
-          
-        // ciclo 4s
-       if ( (blinker % 10 ) == 0)
-          digitalWrite(LED,HIGH);
-        else 
-          digitalWrite(LED,LOW);
-
-        // ciclo 8s
-       if ( (blinker % 20 ) == 0)
-          digitalWrite(LED,HIGH);
-        else 
-          digitalWrite(LED,LOW);
+   Tarefas que devem ser executadas em intervalos de 800ms
 */
-    }
+void led(/*uint16_t ms*/) {
+  uint16_t ms = 800;
+  if ( (millis() - tasks.last_v) > ms) {
+    tasks.last_v = millis();
+
+    blinker++;
+
+    if ( (blinker % 2 ) == 0)
+      digitalWrite(LED, LOW);
+    else
+      digitalWrite(LED, HIGH);
+  }
 }
 
 /* *********************************************************************
- * Tarefas que devem ser executadas em intervalos de 1000ms
- */
+   Tarefas que devem ser executadas em intervalos de 1000ms
+*/
 void tasks_1000ms( void ) {
 
-    if( (millis() - tasks.last_1000ms) > 1000 ){
-        tasks.last_1000ms = millis();
-        /*
-		// Conta execuções
-        blinker++;
-        // Escreve "bit 0" de "blinker" para o LED 
-        //digitalWrite(LED, bitRead(blinker, 0));
-        if(blinker % 2 == 0)
-          digitalWrite(LED,HIGH);
-        else
-          digitalWrite(LED,LOW);
-        // Serial.write(blinker);  // Escreve dados binários na porta serial
-        // Serial.print(blinker);  // Imprime dados na porta serial como texto ASCII
-        Serial.println(blinker);   // Idem ao "print", adicionando EOL ao string
- */
-    }
+  if ( (millis() - tasks.last_1000ms) > 1000 ) {
+    tasks.last_1000ms = millis();
+    /*
+      // Conta execuções
+      blinker++;
+      // Escreve "bit 0" de "blinker" para o LED
+      //digitalWrite(LED, bitRead(blinker, 0));
+      if(blinker % 2 == 0)
+      digitalWrite(LED,HIGH);
+      else
+      digitalWrite(LED,LOW);
+      // Serial.write(blinker);  // Escreve dados binários na porta serial
+      // Serial.print(blinker);  // Imprime dados na porta serial como texto ASCII
+      Serial.println(blinker);   // Idem ao "print", adicionando EOL ao string
+    */
+  }
 }
 
- uint8_t get_node_addr( void ) {
+uint8_t get_node_addr( void ) {
 
-    uint8_t addr = 0;
-    uint8_t addr2 = 0;
-    addr = digitalRead(RADIO_A0);
-    addr2 = digitalRead(RADIO_A1);    
-  
-    addr = ((addr<<1) + addr2);
-    //Serial.println(addr);
+  uint8_t addr = 0;
+  uint8_t addr2 = 0;
+  addr = digitalRead(RADIO_A0);
+  addr2 = digitalRead(RADIO_A1);
 
-    return(addr);
+  addr = ((addr << 1) | addr2);
+  Serial.println(addr);
+
+  return (addr);
 
 }
 
 uint16_t get_volt_bat( void ) {
-  
-   uint16_t valor = analogRead(VOLT_BAT);
-   valor = valor * 10;
-   //Serial.Print(valor);
 
-   return valor;
-  
+  uint16_t volt = analogRead(VOLT_BAT);
+  volt = (((volt * 10) * 1.1) / 1023.0) * 1000.0;
+  Serial.println(volt);
+
+  return volt;
+
 }
 
-void status_encoders( uint16_t *count_enc_a, uint16_t *count_enc_b) {
+void status_encoders( uint16_t count_enc_a, uint16_t count_enc_b) {
 
-    attachInterrupt(digitalPinToInterrupt(count_enc_a),counta,RISING);
+  attachInterrupt(digitalPinToInterrupt(count_enc_a), counta, RISING);
 
-    attachInterrupt(digitalPinToInterrupt(count_enc_b),countb,RISING);
+  attachInterrupt(digitalPinToInterrupt(count_enc_b), countb, RISING);
 
 }
 
 void counta () {
-     enca++;     
-     Serial.Printf(enca);
+  enca++;
+  Serial.println(enca);
 }
 
 void countb () {
-    encb++;
-    Serial.Printf(encb);
+  encb++;
+  Serial.println(encb);
 }
 
+void set_motor_status( uint32_t msg) {
+    
+    motor.status = msg;
+    
+    digitalWrite(HBRID_EN, LOW);
+
+    digitalWrite(MTR_AIN1, bitRead(motor.config.dir_motor_A, 0));
+    digitalWrite(MTR_AIN2, bitRead(motor.config.dir_motor_A, 1));
+    digitalWrite(MTR_BIN1, bitRead(motor.config.dir_motor_B, 0));
+    digitalWrite(MTR_BIN2, bitRead(motor.config.dir_motor_B, 1));
+
+    analogWrite(MTR_PWMA, motor.config.pwm_motor_A);
+    analogWrite(MTR_PWMB, motor.config.pwm_motor_B);
+
+    digitalWrite(HBRID_EN, HIGH);
+}
+
+uint32_t get_motor_status(){
+  
+    return motor.status;
+}
+
+bool is_motor_locked( uint8_t engine) {
+  
+  if (engine)
+     return !(bitRead(motor.config.dir_motor_A,0) ^ bitRead(motor.config.dir_motor_A,1));
+  else
+     return !(bitRead(motor.config.dir_motor_B,0) ^ bitRead(motor.config.dir_motor_B,1));
+  }
+
+ uint8_t set_pwm_max( void ) {
+  
+  
+  
+  }
 /* ****************************************************************** */
 /* ****************************************************************** */
