@@ -80,6 +80,8 @@ uint16_t  enca;
 uint16_t  encb;
 
 TMotCtrl motor;
+uint32_t message;
+
 
 /* ******************************************************************* */
 /* *** Protótipos das funções **************************************** */
@@ -89,15 +91,18 @@ TMotCtrl motor;
 
 void     tasks_10ms( void );
 void     tasks_100ms( void );
-void     tasks_800ms( void );
 void     tasks_1000ms( void );
 //pt1
 void     led(/*uint16_t ms*/);
-uint8_t get_node_addr( void );
+uint8_t  get_node_addr( void );
 uint16_t get_volt_bat( void );
-void status_encoders( uint16_t *count_enc_a, uint16_t *count_enc_b);
 //pt2
-void set_motor_status( uint32_t );
+void     set_motor_status( uint32_t );
+uint32_t load_msg( void );
+bool     is_motor_locked( uint8_t );
+uint8_t  set_pwm_max( void );
+uint32_t get_motor_status( void );
+
 /* ******************************************************************* */
 /* *** SETUP ********************************************************* */
 
@@ -118,9 +123,9 @@ void setup() {
   pinMode(RADIO_A0, INPUT_PULLUP);    // Endereço deste nó: bit 0
   pinMode(RADIO_A1, INPUT_PULLUP);    // Endereço deste nó: bit 1
 
-  //pinMode(IRQ_ENQ_A, INPUT_PULLUP);
-  //pinMode(IRQ_ENQ_B, INPUT_PULLUP);
 
+  message = load_msg();
+  
 }
 
 
@@ -132,15 +137,17 @@ void loop() {
   tasks_10ms();                // Tarefas executadas a cada 10ms
   tasks_100ms();               // Tarefas executadas a cada 100ms
   tasks_1000ms();              // Tarefas executadas a cada 1000ms
-  // pt1
+
   led();
-  get_node_addr();
-  get_volt_bat();
-  status_encoders(enca, encb);
-  //pt2
-  void set_motor_status( uint32_t );
 
+  attachInterrupt(digitalPinToInterrupt(IRQ_ENC_A), counta, RISING);
+  attachInterrupt(digitalPinToInterrupt(IRQ_ENC_B), countb, RISING);
 
+  set_motor_status( message );
+
+  get_motor_status();
+  is_motor_locked(0);
+  is_motor_locked(1);
 }
 
 
@@ -177,7 +184,7 @@ void tasks_100ms( void ) {
    Tarefas que devem ser executadas em intervalos de 800ms
 */
 void led(/*uint16_t ms*/) {
-  uint16_t ms = 800;
+  uint16_t ms = 1600;
   if ( (millis() - tasks.last_v) > ms) {
     tasks.last_v = millis();
 
@@ -197,6 +204,9 @@ void tasks_1000ms( void ) {
 
   if ( (millis() - tasks.last_1000ms) > 1000 ) {
     tasks.last_1000ms = millis();
+    
+    get_node_addr();
+    get_volt_bat();
     /*
       // Conta execuções
       blinker++;
@@ -215,13 +225,11 @@ void tasks_1000ms( void ) {
 
 uint8_t get_node_addr( void ) {
 
-  uint8_t addr = 0;
-  uint8_t addr2 = 0;
-  addr = digitalRead(RADIO_A0);
-  addr2 = digitalRead(RADIO_A1);
-
-  addr = ((addr << 1) | addr2);
-  Serial.println(addr);
+  uint8_t addr = 0x00;
+  addr = addr | digitalRead(RADIO_A0);
+  addr = addr << 1;
+  addr |= digitalRead(RADIO_A1);
+  //Serial.println(addr);
 
   return (addr);
 
@@ -231,31 +239,25 @@ uint16_t get_volt_bat( void ) {
 
   uint16_t volt = analogRead(VOLT_BAT);
   volt = (((volt * 10) * 1.1) / 1023.0) * 1000.0;
-  Serial.println(volt);
+  //Serial.println(volt);
 
   return volt;
 
 }
 
-void status_encoders( uint16_t count_enc_a, uint16_t count_enc_b) {
-
-  attachInterrupt(digitalPinToInterrupt(count_enc_a), counta, RISING);
-
-  attachInterrupt(digitalPinToInterrupt(count_enc_b), countb, RISING);
-
-}
-
 void counta () {
+
   enca++;
   Serial.println(enca);
 }
 
 void countb () {
+  
   encb++;
   Serial.println(encb);
 }
 
-void set_motor_status( uint32_t msg) {
+void set_motor_status(uint32_t msg) {
     
     motor.status = msg;
     
@@ -266,29 +268,59 @@ void set_motor_status( uint32_t msg) {
     digitalWrite(MTR_BIN1, bitRead(motor.config.dir_motor_B, 0));
     digitalWrite(MTR_BIN2, bitRead(motor.config.dir_motor_B, 1));
 
+    //uint8_t pwm = set_pwm_max(); 
+    
+    uint8_t pwm = PWM_MAX; 
+    
+    if (motor.config.pwm_motor_A > pwm)
+      motor.config.pwm_motor_A = pwm;
+    if (motor.config.pwm_motor_A > pwm)
+      motor.config.pwm_motor_A = pwm;
+      
     analogWrite(MTR_PWMA, motor.config.pwm_motor_A);
     analogWrite(MTR_PWMB, motor.config.pwm_motor_B);
 
     digitalWrite(HBRID_EN, HIGH);
 }
 
-uint32_t get_motor_status(){
+uint32_t get_motor_status( void ){
   
     return motor.status;
 }
 
-bool is_motor_locked( uint8_t engine) {
+bool is_motor_locked( uint8_t mtr) {
   
-  if (engine)
+  if (mtr)
      return !(bitRead(motor.config.dir_motor_A,0) ^ bitRead(motor.config.dir_motor_A,1));
   else
      return !(bitRead(motor.config.dir_motor_B,0) ^ bitRead(motor.config.dir_motor_B,1));
-  }
+}
 
- uint8_t set_pwm_max( void ) {
-  
-  
-  
-  }
+uint8_t set_pwm_max( void ) {
+  uint16_t volt = get_volt_bat();
+  uint8_t new_pwm_max = (PWM_MAX * (uint8_t)(volt))/5;
+
+  return new_pwm_max;
+}
+
+uint32_t load_msg() {
+  uint32_t msg;
+  msg = 0x009F;
+  msg = msg << 8;
+  msg = msg | 0x009F;
+  msg = msg << 2;
+  msg = msg | 0x0002;
+  msg = msg << 2;
+  msg = msg | 0x0002;
+  msg = msg << 12;
+  //uint32_t msg = B1001 1111 1001 1111 0101 0000 0000 0000;
+  return msg;
+  /*
+  msg.config.pwm_motor_B = B10011111;
+  msg.config.pwm_motor_A = B10011111;
+  msg.config.dir_motor_B = B01;
+  msg.config.dir_motor_A = B01;
+  */
+}
 /* ****************************************************************** */
 /* ****************************************************************** */
