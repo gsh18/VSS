@@ -1,4 +1,4 @@
-
+#include <avr/io.h>
 #include <avr/pgmspace.h>
 #include <RF24Network.h>
 #include <RF24.h>
@@ -22,6 +22,8 @@
 #define PWM_MAX         0x9F   // PWM máx. para que os motores tenham aprox. 5V
 #define SPD_MIN           50   // Vel. mín. em mm/s ( Condição: PWM > PWM_MIN )
 #define SPD_MAX          500   // Vel. máx. em mm/s ( Condição: PWM < PWM_MAX )
+
+#define asc2hex(a) (((a) < 'a')?((a) - '0'):(((a) - 'a')+10))
 
 /* ****************************************************************** */
 /* Estas são as conexões de hardware mapeadas aos pinos do Arduino ** */
@@ -82,6 +84,8 @@ uint16_t  encb;
 TMotCtrl motor;
 uint32_t message;
 
+uint8_t  recv;
+uint32_t buffer;
 
 /* ******************************************************************* */
 /* *** Protótipos das funções **************************************** */
@@ -96,6 +100,8 @@ void     tasks_1000ms( void );
 void     led(/*uint16_t ms*/);
 uint8_t  get_node_addr( void );
 uint16_t get_volt_bat( void );
+void counta ( void );
+void countb ( void );
 //pt2
 void     set_motor_status( uint32_t );
 uint32_t load_msg( void );
@@ -123,9 +129,17 @@ void setup() {
   pinMode(RADIO_A0, INPUT_PULLUP);    // Endereço deste nó: bit 0
   pinMode(RADIO_A1, INPUT_PULLUP);    // Endereço deste nó: bit 1
 
+    // Inicialização dos pinos de controle da Ponte H
+    pinMode(HBRID_EN, OUTPUT);    // 
+    digitalWrite(HBRID_EN, HIGH); // Habilita ponte H
+    pinMode(MTR_AIN1, OUTPUT);    // Bit 0 - Controle da ponte H do Motor A
+    pinMode(MTR_AIN2, OUTPUT);    // Bit 1 - Controle da ponte H do Motor A
+    pinMode(MTR_BIN1, OUTPUT);    // Bit 0 - Controle da ponte H do Motor B
+    pinMode(MTR_BIN2, OUTPUT);    // Bit 1 - Controle da ponte H do Motor B
+    pinMode(MTR_PWMA, OUTPUT);    // Sinal de PWM para controle  do Motor A
+    pinMode(MTR_PWMB, OUTPUT);    // Sinal de PWM para controle  do Motor B
 
   message = load_msg();
-  
 }
 
 
@@ -142,8 +156,6 @@ void loop() {
 
   attachInterrupt(digitalPinToInterrupt(IRQ_ENC_A), counta, RISING);
   attachInterrupt(digitalPinToInterrupt(IRQ_ENC_B), countb, RISING);
-
-  set_motor_status( message );
 
   get_motor_status();
   is_motor_locked(0);
@@ -175,8 +187,23 @@ void tasks_100ms( void ) {
   if ( (millis() - tasks.last_100ms) > 100 ) {
     tasks.last_100ms = millis();
 
-
-
+   if( Serial.available() ) {
+            buffer = 0;
+        
+        while( Serial.available() ){
+        
+            // Lê caracteres até receber 'quebra de linha'
+            if( (recv = Serial.read()) != '\n' ){
+                buffer  = buffer << 4;
+                buffer |= asc2hex(recv);
+            }
+            else {
+                // Se buffer completo => altera estado dos motores
+                set_motor_status(buffer);
+            }
+        }
+  }
+  //set_motor_status(message);
   }
 }
 
@@ -248,35 +275,48 @@ uint16_t get_volt_bat( void ) {
 void counta () {
 
   enca++;
-  Serial.println(enca);
+  //Serial.println(enca);
 }
 
 void countb () {
   
   encb++;
-  Serial.println(encb);
+  //Serial.println(encb);
 }
 
 void set_motor_status(uint32_t msg) {
     
-    motor.status = msg;
-    
     digitalWrite(HBRID_EN, LOW);
-
+    /*
+    motor.status = msg;
+    Serial.print("msg: ");
+    Serial.println(msg);
+    Serial.print("m.status: ");
+    Serial.println(motor.status);
+    */
     digitalWrite(MTR_AIN1, bitRead(motor.config.dir_motor_A, 0));
     digitalWrite(MTR_AIN2, bitRead(motor.config.dir_motor_A, 1));
-    digitalWrite(MTR_BIN1, bitRead(motor.config.dir_motor_B, 0));
-    digitalWrite(MTR_BIN2, bitRead(motor.config.dir_motor_B, 1));
-
+    digitalWrite(MTR_BIN1, bitRead(motor.config.dir_motor_B, 1));
+    digitalWrite(MTR_BIN2, bitRead(motor.config.dir_motor_B, 0));
+    /*
+    Serial.print("motor config b: ");
+    Serial.print(bitRead(motor.config.dir_motor_B, 0));
+    Serial.println(bitRead(motor.config.dir_motor_B, 1));
+    Serial.print("motor config a: ");   
+    Serial.print(bitRead(motor.config.dir_motor_A, 0));
+    Serial.println(bitRead(motor.config.dir_motor_A, 1));
+    */
     //uint8_t pwm = set_pwm_max(); 
-    
     uint8_t pwm = PWM_MAX; 
     
     if (motor.config.pwm_motor_A > pwm)
       motor.config.pwm_motor_A = pwm;
     if (motor.config.pwm_motor_A > pwm)
       motor.config.pwm_motor_A = pwm;
-      
+
+    Serial.println("pwm: ");
+    Serial.println(pwm);
+    
     analogWrite(MTR_PWMA, motor.config.pwm_motor_A);
     analogWrite(MTR_PWMB, motor.config.pwm_motor_B);
 
@@ -297,30 +337,27 @@ bool is_motor_locked( uint8_t mtr) {
 }
 
 uint8_t set_pwm_max( void ) {
+
   uint16_t volt = get_volt_bat();
-  uint8_t new_pwm_max = (PWM_MAX * (uint8_t)(volt))/5;
+  //uint8_t new_pwm_max = (PWM_MAX * (uint8_t)(volt))/5;
+  uint8_t new_pwm_max = (uint8_t)((255.0 * 5.0 * 1000.0) / (uint8_t)(volt));
 
   return new_pwm_max;
 }
 
 uint32_t load_msg() {
   uint32_t msg;
-  msg = 0x009F;
-  msg = msg << 8;
+  msg = 2678018048;
+/*  msg = msg << 8;
   msg = msg | 0x009F;
   msg = msg << 2;
   msg = msg | 0x0002;
   msg = msg << 2;
   msg = msg | 0x0002;
-  msg = msg << 12;
-  //uint32_t msg = B1001 1111 1001 1111 0101 0000 0000 0000;
+  msg = msg << 12;*/
+  //1001 1111 1001 1111 0101 0000 0000 0000
   return msg;
-  /*
-  msg.config.pwm_motor_B = B10011111;
-  msg.config.pwm_motor_A = B10011111;
-  msg.config.dir_motor_B = B01;
-  msg.config.dir_motor_A = B01;
-  */
+  
 }
 /* ****************************************************************** */
 /* ****************************************************************** */
